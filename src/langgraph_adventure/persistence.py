@@ -5,7 +5,9 @@ Phase 4: just SqliteSaver. Phase 9 may add update_state / time-travel.
 from __future__ import annotations
 import sqlite3
 from pathlib import Path
+from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 DB_PATH = Path.home() / ".langgraph_adventure" / "game.db"
@@ -19,3 +21,19 @@ def get_sqlite_saver() -> SqliteSaver:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     return SqliteSaver(sqlite3.connect(str(DB_PATH), check_same_thread=False))
+
+
+def get_checkpointer(memory: bool = False) -> Any:
+    """Return a checkpointer.
+
+    Args:
+        memory: if True, return InMemorySaver (for tests); otherwise return
+                SqliteSaver (for persistent play sessions).
+
+    Thread_id isolation: each ``config["configurable"]["thread_id"]`` keeps a
+    separate checkpoint history. To "undo", rewind via ``update_state`` with
+    values from a previous checkpoint.
+    """
+    if memory:
+        return InMemorySaver()
+    return get_sqlite_saver()
