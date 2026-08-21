@@ -119,7 +119,7 @@ def play_action(thread_id: str, action: str = "", request: Request = None):
     config = {"configurable": {"thread_id": thread_id}}
     state = graph.get_state(config)
 
-    if not state.next:
+    if not state.values:
         return templates.TemplateResponse(
             "_narration.html.j2",
             {"request": request, "thread_id": thread_id, "scene": None, "actions": []},
