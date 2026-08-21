@@ -192,6 +192,37 @@ def merge_reactions(state: GameState) -> dict:
     return {"messages": messages}
 
 
+def persist(state: GameState, runtime: Runtime) -> dict:
+    """Write player's action + scene context to store under player_history namespace.
+
+    Keyed by session_id (from config) so the same player across sessions
+    accumulates history.
+
+    Note: per-NPC memories are already written by _speak in npc_graph. This
+    node handles player-level history only.
+    """
+    action = state.get("chosen_action")
+    scene = state.get("current_scene")
+    if action is None or scene is None:
+        return {}
+
+    store = getattr(runtime, "store", None)
+    if store is None:
+        return {}
+
+    # We don't have direct access to config here, so use a fixed key per turn.
+    # Phase 9 uses session_id from config.
+    turn_key = f"turn_{scene.scene_id}_{action.id}"
+    history_entry = {
+        "scene_id": scene.scene_id,
+        "action_id": action.id,
+        "action_label": action.label,
+        "next_state": action.next_state,
+    }
+    store.put(("player_history", scene.scene_id), turn_key, history_entry)
+    return {}
+
+
 def next_scene(state: GameState) -> dict:
     """Generate the next scene (Phase 7 streams narration; Phase 5 just stub)."""
     return {}
@@ -223,6 +254,7 @@ def build_game_graph() -> StateGraph:
     builder.add_node("interpret_custom_action", interpret_custom_action)
     builder.add_node("_npc_react", _npc_react_node)
     builder.add_node("merge_reactions", merge_reactions)
+    builder.add_node("persist", persist)
     builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
@@ -238,7 +270,8 @@ def build_game_graph() -> StateGraph:
     )
     builder.add_edge("interpret_custom_action", "next_scene")
     builder.add_edge("_npc_react", "merge_reactions")
-    builder.add_edge("merge_reactions", "next_scene")
+    builder.add_edge("merge_reactions", "persist")
+    builder.add_edge("persist", "next_scene")
     builder.add_edge("next_scene", END)
     return builder
 
