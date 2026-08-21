@@ -136,5 +136,45 @@ def play_action(thread_id: str, action: str = "", request: Request = None):
     )
 
 
+@app.post("/play/{thread_id}/undo")
+def play_undo(thread_id: str, request: Request = None):
+    """Rewind to the previous checkpoint's state values."""
+    config = {"configurable": {"thread_id": thread_id}}
+    history = list(graph.get_state_history(config))
+
+    # history[0] is most recent. history[1] is one step back.
+    if len(history) < 2:
+        # Nothing to undo.
+        state = graph.get_state(config)
+        scene = state.values.get("current_scene")
+        actions = scene.actions if scene and scene.actions else []
+        return templates.TemplateResponse(
+            "_narration.html.j2",
+            {"request": request, "thread_id": thread_id, "scene": scene, "actions": actions},
+        )
+
+    prior = history[1]
+    graph.update_state(config, values=prior.values)
+
+    state = graph.get_state(config)
+    scene = state.values.get("current_scene")
+    actions = scene.actions if scene and scene.actions else []
+    return templates.TemplateResponse(
+        "_narration.html.j2",
+        {"request": request, "thread_id": thread_id, "scene": scene, "actions": actions},
+    )
+
+
+@app.post("/play/{thread_id}/fork")
+def play_fork(thread_id: str) -> RedirectResponse:
+    """Create a new thread seeded from the current state's values."""
+    config = {"configurable": {"thread_id": thread_id}}
+    state = graph.get_state(config)
+    new_thread_id = str(uuid.uuid4())
+    new_config = {"configurable": {"thread_id": new_thread_id}}
+    graph.update_state(new_config, values=state.values)
+    return RedirectResponse(url=f"/play/{new_thread_id}", status_code=307)
+
+
 if __name__ == "__main__":
     uvicorn.run("langgraph_adventure.web.server:app", host="127.0.0.1", port=8000, reload=False)
