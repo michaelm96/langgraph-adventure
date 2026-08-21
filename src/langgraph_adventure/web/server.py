@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
+from langchain_core.messages import HumanMessage
 
 from langgraph_adventure.game_graph import build_game_graph
 from langgraph_adventure.meta_graph import graph as meta_graph
@@ -71,14 +72,14 @@ def _opening_scene(theme: str):
 
 @app.get("/")
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/play/new?theme=noir-detective", status_code=307)
+    return RedirectResponse(url="/play/new?theme=noir-detective", status_code=303)
 
 
 @app.get("/play/new")
 def play_new(theme: str = "noir-detective") -> RedirectResponse:
     """Create a new thread_id and redirect to /play/{thread_id}."""
     thread_id = str(uuid.uuid4())
-    return RedirectResponse(url=f"/play/{thread_id}?theme={theme}", status_code=307)
+    return RedirectResponse(url=f"/play/{thread_id}?theme={theme}", status_code=303)
 
 
 @app.get("/play/{thread_id}")
@@ -155,7 +156,10 @@ def play_undo(thread_id: str, request: Request = None):
 
     prior = history[1]
     graph.update_state(config, values=prior.values)
-
+    # Re-invoke to re-pause at interrupt_for_choice. After update_state, state.next
+    # is () (ENDED); without this, the next action's Command(resume=...) has no
+    # pending interrupt to resume.
+    graph.invoke({"messages": [HumanMessage(content=prior.values.get("theme", "noir-detective"))]}, config=config)
     state = graph.get_state(config)
     scene = state.values.get("current_scene")
     actions = scene.actions if scene and scene.actions else []
@@ -173,7 +177,7 @@ def play_fork(thread_id: str) -> RedirectResponse:
     new_thread_id = str(uuid.uuid4())
     new_config = {"configurable": {"thread_id": new_thread_id}}
     graph.update_state(new_config, values=state.values)
-    return RedirectResponse(url=f"/play/{new_thread_id}", status_code=307)
+    return RedirectResponse(url=f"/play/{new_thread_id}", status_code=303)
 
 
 if __name__ == "__main__":
