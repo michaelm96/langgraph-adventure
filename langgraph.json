@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "meta": "./src/langgraph_adventure/meta_graph.py:graph",
+    "game": "./src/langgraph_adventure/game_graph.py:graph"
+  },
+  "env": "./.env"
+}
