@@ -54,33 +54,65 @@ def interrupt_for_choice(state: GameState) -> dict:
     `interrupt({...})` raises GraphInterrupt; the graph pauses here. To resume,
     call `graph.invoke(Command(resume=<choice>), config)`. The payload should
     include everything the caller (CLI/REPL) needs to render the menu.
+
+    Phase 5.2: also append a synthetic "custom" action so the player can type
+    free text. The CLI/REPL prompts for input when this option is chosen.
     """
     scene = state.get("current_scene")
     if scene is None:
         return {}
+    actions_payload = [{"id": a.id, "label": a.label, "next_state": a.next_state} for a in scene.actions]
+    # Append "custom" option that lets player type free text
+    actions_payload.append({"id": "custom", "label": "(type your own action)", "next_state": "custom"})
     payload = {
         "scene_id": scene.scene_id,
-        "actions": [{"id": a.id, "label": a.label, "next_state": a.next_state} for a in scene.actions],
+        "actions": actions_payload,
         "description": scene.description,
     }
     user_choice = interrupt(payload)
-    # Look up the real next_state from the scene's action list.
-    # Free-text input (e.g. from "custom") won't match; fall back to a
-    # synthetic Action with next_state="continue" — phase 5.2 will fix that.
     matched = next((a for a in scene.actions if a.id == user_choice), None)
-    chosen = matched if matched is not None else Action(id=user_choice, label=user_choice, next_state="continue")
+    if matched is not None:
+        chosen = matched
+    elif user_choice == "custom":
+        # In real CLI, REPL prompts for free text and passes it as the resume value.
+        # In tests, the demo will pass a pre-built custom action.
+        chosen = Action(id="custom", label="(typed)", next_state="custom")
+    else:
+        chosen = Action(id=user_choice, label=user_choice, next_state="continue")
     return {"chosen_action": chosen}
 
 
-def route_choice(state: GameState) -> Command:
-    """Explicit Command routing based on chosen_action.next_state.
+def interpret_custom_action(state: GameState) -> dict:
+    """LLM call: interpret player's free-text action and route to next_state.
 
-    - next_state == "end": terminate the game
-    - otherwise: continue to react_npcs
+    Phase 5: stub returns 'continue' as default (MOCK LLM doesn't interpret).
+    Phase 8 will swap to a real LLM call that reads chosen_action.label and
+    decides between continue/branch_left/branch_right/end.
+
+    Always sets chosen_action to a fresh Action with the determined next_state.
     """
+    action = state.get("chosen_action")
+    if action is None:
+        return {}
+    # Phase 5 stub: route everything to "continue" (MOCK fallback)
+    # Phase 8 will replace this with a real LLM call
+    determined_next_state = "continue"
+    return {
+        "chosen_action": Action(
+            id=action.id,
+            label=action.label,
+            next_state=determined_next_state,
+        ),
+    }
+
+
+def route_choice(state: GameState) -> Command:
+    """Explicit Command routing. Routes 'custom' to interpret_custom_action."""
     action = state.get("chosen_action")
     if action is None or action.next_state == "end":
         return Command(goto=END, update={})
+    if action.next_state == "custom":
+        return Command(goto="interpret_custom_action", update={"chosen_action": action})
     return Command(goto="react_npcs", update={"chosen_action": action})
 
 
@@ -95,11 +127,12 @@ def next_scene(state: GameState) -> dict:
 
 
 def build_game_graph() -> StateGraph:
-    """Build the game-graph with 5 nodes.
+    """Build the game-graph with 6 nodes.
 
     Returns the uncompiled builder; callers compile with `.compile(checkpointer=...)`.
     Compile flow: START → present_scene → interrupt_for_choice → route_choice
-                   → react_npcs → next_scene → END.
+                   → (interpret_custom_action if next_state=="custom") → react_npcs
+                   → next_scene → END.
 
     `route_choice` uses Command(goto=...) which overrides the advisory edge from
     it to `react_npcs`; when next_state == "end", goto=END terminates early.
@@ -108,12 +141,14 @@ def build_game_graph() -> StateGraph:
     builder.add_node("present_scene", present_scene)
     builder.add_node("interrupt_for_choice", interrupt_for_choice)
     builder.add_node("route_choice", route_choice)
+    builder.add_node("interpret_custom_action", interpret_custom_action)
     builder.add_node("react_npcs", react_npcs)
     builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
     builder.add_edge("interrupt_for_choice", "route_choice")
-    builder.add_edge("route_choice", "react_npcs")
+    builder.add_edge("route_choice", "interpret_custom_action")
+    builder.add_edge("interpret_custom_action", "react_npcs")
     builder.add_edge("react_npcs", "next_scene")
     builder.add_edge("next_scene", END)
     return builder
