@@ -13,7 +13,7 @@ from typing import Annotated, Any
 from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import MessagesState, add_messages
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import interrupt
+from langgraph.types import interrupt, Command
 
 from langgraph_adventure.state import Action, Scene
 
@@ -64,25 +64,58 @@ def interrupt_for_choice(state: GameState) -> dict:
         "description": scene.description,
     }
     user_choice = interrupt(payload)
-    return {"chosen_action": Action(id=user_choice, label=user_choice, next_state="continue")}
+    # Look up the real next_state from the scene's action list.
+    # Free-text input (e.g. from "custom") won't match; fall back to a
+    # synthetic Action with next_state="continue" — phase 5.2 will fix that.
+    matched = next((a for a in scene.actions if a.id == user_choice), None)
+    chosen = matched if matched is not None else Action(id=user_choice, label=user_choice, next_state="continue")
+    return {"chosen_action": chosen}
+
+
+def route_choice(state: GameState) -> Command:
+    """Explicit Command routing based on chosen_action.next_state.
+
+    - next_state == "end": terminate the game
+    - otherwise: continue to react_npcs
+    """
+    action = state.get("chosen_action")
+    if action is None or action.next_state == "end":
+        return Command(goto=END, update={})
+    return Command(goto="react_npcs", update={"chosen_action": action})
+
+
+def react_npcs(state: GameState) -> dict:
+    """Run NPC reactions (Phase 6 wires Send fanout; Phase 5 just stub)."""
+    return {}
+
+
+def next_scene(state: GameState) -> dict:
+    """Generate the next scene (Phase 7 streams narration; Phase 5 just stub)."""
+    return {}
 
 
 def build_game_graph() -> StateGraph:
-    """Build the game-graph with 2 nodes (other nodes added in later phases).
+    """Build the game-graph with 5 nodes.
 
     Returns the uncompiled builder; callers compile with `.compile(checkpointer=...)`.
-    Compile flow: START → present_scene → interrupt_for_choice → END.
+    Compile flow: START → present_scene → interrupt_for_choice → route_choice
+                   → react_npcs → next_scene → END.
 
-    Phase 4 doesn't compile here — the demo in 4.3 uses InMemorySaver so the
-    graph can pause + resume in a single process. The REPL in 4.2 uses
-    SqliteSaver for cross-process persistence.
+    `route_choice` uses Command(goto=...) which overrides the advisory edge from
+    it to `react_npcs`; when next_state == "end", goto=END terminates early.
     """
     builder = StateGraph(GameState)
     builder.add_node("present_scene", present_scene)
     builder.add_node("interrupt_for_choice", interrupt_for_choice)
+    builder.add_node("route_choice", route_choice)
+    builder.add_node("react_npcs", react_npcs)
+    builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
-    builder.add_edge("interrupt_for_choice", END)
+    builder.add_edge("interrupt_for_choice", "route_choice")
+    builder.add_edge("route_choice", "react_npcs")
+    builder.add_edge("react_npcs", "next_scene")
+    builder.add_edge("next_scene", END)
     return builder
 
 
