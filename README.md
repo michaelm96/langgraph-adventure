@@ -123,6 +123,22 @@ Real-mode operation (without `MOCK_LLM=1`) requires a valid `MINIMAX_API_KEY`
 in `.env`. Phases 7+ work end-to-end with real MiniMax narration once that's
 configured.
 
+## Web UI
+
+Local-only browser UI on top of the same game graph. Same SQLite DB as
+the CLI — a `thread_id` opened in the CLI is the same `thread_id` you
+can resume in the browser.
+
+```bash
+pip install -e ".[web]"
+MOCK_LLM=1 python -m langgraph_adventure.web.server
+# open http://127.0.0.1:8000/
+```
+
+Keyboard shortcuts: `1`/`2`/`3` choose action, `u` undo, `f` fork.
+
+Single-user, no auth. URL is the only session token.
+
 ## License
 
 MIT.
