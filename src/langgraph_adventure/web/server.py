@@ -177,4 +177,6 @@ def play_fork(thread_id: str) -> RedirectResponse:
 
 
 if __name__ == "__main__":
-    uvicorn.run("langgraph_adventure.web.server:app", host="127.0.0.1", port=8000, reload=False)
+    import os
+    port = int(os.environ.get("LG_ADV_WEB_PORT", "8000"))
+    uvicorn.run("langgraph_adventure.web.server:app", host="127.0.0.1", port=port, reload=False)
