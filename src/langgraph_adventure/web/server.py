@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.types import Command
 
 from langgraph_adventure.game_graph import build_game_graph
 from langgraph_adventure.meta_graph import graph as meta_graph
@@ -108,6 +109,29 @@ def play(thread_id: str, request: Request, theme: str = "noir-detective"):
 
     return templates.TemplateResponse(
         "play.html.j2",
+        {"request": request, "thread_id": thread_id, "scene": scene, "actions": actions},
+    )
+
+
+@app.post("/play/{thread_id}/action")
+def play_action(thread_id: str, action: str = "", request: Request = None):
+    """Resume the graph's interrupt with the chosen action. Returns HTMX partial."""
+    config = {"configurable": {"thread_id": thread_id}}
+    state = graph.get_state(config)
+
+    if not state.next:
+        return templates.TemplateResponse(
+            "_narration.html.j2",
+            {"request": request, "thread_id": thread_id, "scene": None, "actions": []},
+        )
+
+    graph.invoke(Command(resume=action), config=config)
+    state = graph.get_state(config)
+    scene = state.values.get("current_scene")
+    actions = scene.actions if scene and scene.actions else []
+
+    return templates.TemplateResponse(
+        "_narration.html.j2",
         {"request": request, "thread_id": thread_id, "scene": scene, "actions": actions},
     )
 
