@@ -8,13 +8,15 @@ scene-generator branch, and the action-handler node.
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any
 
 from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import MessagesState, add_messages
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import interrupt, Command
+from langgraph.types import interrupt, Command, Send
 
+from langgraph_adventure.npc_graph import build_npc_graph
 from langgraph_adventure.state import Action, Scene
 
 
@@ -23,10 +25,13 @@ class GameState(MessagesState):
 
     Inherits `messages` from MessagesState (uses add_messages reducer).
     Adds game-specific fields.
+
+    `npc_dialogues` uses operator.or_ as a reducer so multiple parallel
+    Send-fanned NPC reactions merge their dict contributions into one.
     """
     current_scene: Scene | None
     chosen_action: Action | None
-    npc_dialogues: dict[str, str]
+    npc_dialogues: Annotated[dict[str, str], operator.or_]
 
 
 def present_scene(state: GameState) -> dict:
@@ -124,24 +129,46 @@ def _route_choice(state: GameState) -> dict:
     return {}
 
 
-def _route_after_choice(state: GameState) -> str:
+def _route_after_choice(state: GameState) -> str | list[Send]:
     """Conditional-edge router: pick next node based on chosen_action.next_state.
 
     - "end" → END (terminate game)
     - "custom" → interpret_custom_action (LLM routing stub)
-    - otherwise → react_npcs (continue)
+    - otherwise → fanout via Send to _npc_react (one Send per NPC in scene)
+
+    Returning list[Send] from a conditional edge is the standard langgraph
+    fanout pattern — each Send invokes the target node in parallel with its
+    own input. The Send target (_npc_react) merges results into npc_dialogues.
     """
     action = state.get("chosen_action")
     if action is None or action.next_state == "end":
         return "__end__"
     if action.next_state == "custom":
         return "interpret_custom_action"
-    return "react_npcs"
+    # Fanout: one Send per NPC
+    scene = state.get("current_scene")
+    npcs = getattr(scene, "npcs", None) or []
+    if not npcs:
+        # No NPCs to react to — skip react_npcs, go straight to next_scene
+        return "next_scene"
+    return [
+        Send("_npc_react", {"npc_name": npc, "situation": scene.description if scene else ""})
+        for npc in npcs
+    ]
 
 
-def react_npcs(state: GameState) -> dict:
-    """Run NPC reactions (Phase 6 wires Send fanout; Phase 5 just stub)."""
-    return {}
+def _npc_react_node(state: GameState) -> dict:
+    """Single-NPC react node. Reads npc_name and situation from state (set by Send arg).
+
+    Runs the per-NPC subgraph and returns its dialogue, keyed by NPC name.
+    """
+    npc_name = state.get("npc_name", "")
+    situation = state.get("situation", "")
+    if not npc_name:
+        return {}
+    npc_g = build_npc_graph(npc_name)
+    result = npc_g.invoke({"persona": npc_name, "situation": situation, "dialogue": ""})
+    return {"npc_dialogues": {npc_name: result["dialogue"]}}
 
 
 def next_scene(state: GameState) -> dict:
@@ -153,9 +180,16 @@ def build_game_graph() -> StateGraph:
     """Build the game-graph with 6 nodes.
 
     Returns the uncompiled builder; callers compile with `.compile(checkpointer=...)`.
-    Compile flow: START → present_scene → interrupt_for_choice → _route_choice
-                   → (conditional) → interpret_custom_action → react_npcs
+    Compile flow: START → present_scene → interrupt_for_choice → route_choice
+                   → (conditional) → [interpret_custom_action] → _npc_react (fanned)
                    → next_scene → END.
+
+    Phase 6 changes:
+    - `react_npcs` is no longer a regular node. The conditional edge from
+      `route_choice` directly returns `list[Send]` for parallel NPC fanout.
+    - `_npc_react` is the per-NPC node that Send targets.
+    - When a scene has no NPCs, the conditional edge skips react_npcs and
+      routes directly to `next_scene`.
 
     Why no Command(goto=END): langgraph 1.2.x silently corrupts chosen_action
     state when Command routes to END. Conditional edges with END as a target
@@ -166,7 +200,7 @@ def build_game_graph() -> StateGraph:
     builder.add_node("interrupt_for_choice", interrupt_for_choice)
     builder.add_node("route_choice", _route_choice)
     builder.add_node("interpret_custom_action", interpret_custom_action)
-    builder.add_node("react_npcs", react_npcs)
+    builder.add_node("_npc_react", _npc_react_node)
     builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
@@ -175,13 +209,13 @@ def build_game_graph() -> StateGraph:
         "route_choice",
         _route_after_choice,
         {
-            "react_npcs": "react_npcs",
             "interpret_custom_action": "interpret_custom_action",
+            "next_scene": "next_scene",
             "__end__": END,
         },
     )
-    builder.add_edge("interpret_custom_action", "react_npcs")
-    builder.add_edge("react_npcs", "next_scene")
+    builder.add_edge("interpret_custom_action", "next_scene")
+    builder.add_edge("_npc_react", "next_scene")
     builder.add_edge("next_scene", END)
     return builder
 
