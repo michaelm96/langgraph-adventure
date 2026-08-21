@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -114,7 +114,7 @@ def play(thread_id: str, request: Request, theme: str = "noir-detective"):
 
 
 @app.post("/play/{thread_id}/action")
-def play_action(thread_id: str, action: str = "", request: Request = None):
+def play_action(thread_id: str, action: str = Form(""), request: Request = None):
     """Resume the graph's interrupt with the chosen action. Returns HTMX partial."""
     config = {"configurable": {"thread_id": thread_id}}
     state = graph.get_state(config)

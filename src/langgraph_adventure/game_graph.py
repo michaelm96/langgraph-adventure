@@ -20,6 +20,7 @@ from langgraph.runtime import Runtime
 
 from langgraph_adventure.npc_graph import build_npc_graph
 from langgraph_adventure.state import Action, Scene
+from langgraph_adventure.meta_graph import _SCENES
 
 
 class GameState(MessagesState):
@@ -224,8 +225,16 @@ def persist(state: GameState, runtime: Runtime) -> dict:
 
 
 def next_scene(state: GameState) -> dict:
-    """Generate the next scene (Phase 7 streams narration; Phase 5 just stub)."""
-    return {}
+    """Pick the next scene based on the chosen action's routing key.
+
+    Phase 7 would stream NPC dialogue here; for now, instant lookup via the
+    meta-graph's hardcoded scene factories so the story actually progresses.
+    """
+    action = state.get("chosen_action")
+    if action is None:
+        return {}
+    factory = _SCENES.get(action.next_state, _SCENES["continue"])
+    return {"current_scene": factory()}
 
 
 def build_game_graph() -> StateGraph:
