@@ -5,6 +5,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
+from langgraph.store.base import BaseStore
 
 
 class NPCState(TypedDict):
@@ -61,15 +62,20 @@ def _speak(state: NPCState, runtime: Runtime) -> dict:
     return {}
 
 
-def build_npc_graph(persona: str) -> CompiledStateGraph:
+def build_npc_graph(persona: str, store: BaseStore | None = None) -> CompiledStateGraph:
     """Build a per-NPC subgraph. `persona` is baked in.
 
     Compile flow: perceive_situation -> decide_action -> speak -> END.
 
+    Optional `store`: passed to `compile(store=...)` so nodes can read/write
+    per-NPC long-term memory via `runtime.store`. In langgraph 1.2.x the
+    `config['store']` path is NOT honored; the compile-time parameter is
+    the only public way to inject a store.
+
     Usage:
-        g = build_npc_graph("Old Hermit")
-        result = g.invoke({"persona": "Old Hermit", "situation": "A traveler approaches", "dialogue": ""})
-        print(result["dialogue"])  # "I've been waiting..."
+        g = build_npc_graph("Old Hermit", store=get_store())
+        result = g.invoke({"persona": "Old Hermit", "situation": "..."})
+        print(result["dialogue"])
     """
     builder = StateGraph(NPCState)
     builder.add_node("perceive_situation", _perceive_situation)
@@ -79,4 +85,6 @@ def build_npc_graph(persona: str) -> CompiledStateGraph:
     builder.add_edge("perceive_situation", "decide_action")
     builder.add_edge("decide_action", "speak")
     builder.add_edge("speak", END)
-    return builder.compile()
+    if store is None:
+        return builder.compile()
+    return builder.compile(store=store)

@@ -16,6 +16,7 @@ from langgraph.graph.message import MessagesState, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt, Command, Send
+from langgraph.runtime import Runtime
 
 from langgraph_adventure.npc_graph import build_npc_graph
 from langgraph_adventure.state import Action, Scene
@@ -158,16 +159,19 @@ def _route_after_choice(state: GameState) -> str | list[Send]:
     ]
 
 
-def _npc_react_node(state: GameState) -> dict:
+def _npc_react_node(state: GameState, runtime: Runtime) -> dict:
     """Single-NPC react node. Reads npc_name and situation from state (set by Send arg).
 
     Runs the per-NPC subgraph and returns its dialogue, keyed by NPC name.
+    Passes the parent graph's store to the NPC subgraph so it can read/write
+    per-NPC long-term memory.
     """
     npc_name = state.get("npc_name", "")
     situation = state.get("situation", "")
     if not npc_name:
         return {}
-    npc_g = build_npc_graph(npc_name)
+    store = getattr(runtime, "store", None)
+    npc_g = build_npc_graph(npc_name, store=store)
     result = npc_g.invoke({"persona": npc_name, "situation": situation, "dialogue": ""})
     return {"npc_dialogues": {npc_name: result["dialogue"]}}
 
