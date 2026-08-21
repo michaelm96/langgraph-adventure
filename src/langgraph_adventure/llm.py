@@ -1,15 +1,32 @@
 """LLM factory.
 
 MiniMax provider (Anthropic-compatible API) plus a MOCK mode for tests.
-Reads MINIMAX_API_KEY directly from env (no config.toml).
+Reads MINIMAX_API_KEY from env, falling back to .env file in cwd/parent dirs.
 """
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import AsyncIterator
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk
+
+
+def _load_env_file() -> None:
+    """Ponytail: stdlib-only .env loader. Walks up from cwd looking for .env."""
+    if "MINIMAX_API_KEY" in os.environ:
+        return
+    for d in (Path.cwd(), *Path.cwd().parents):
+        env_path = d / ".env"
+        if env_path.is_file():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            break
 
 
 class _MockChatModel(BaseChatModel):
@@ -39,6 +56,8 @@ def resolve_model(model_str: str) -> BaseChatModel:
     """Return a chat model from a 'provider/name' string."""
     if os.environ.get("MOCK_LLM") == "1":
         return _MockChatModel()
+
+    _load_env_file()
 
     if "/" not in model_str:
         raise ValueError(f"Model must be 'provider/name', got: {model_str!r}")

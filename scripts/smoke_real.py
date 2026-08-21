@@ -33,24 +33,23 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PHASES = [
     ("phase1_stategraph", "minimal turn loop"),
     ("phase2_conditional", "branching scene routing"),
-    ("phase3_subgraph_npc", "first NPC interaction"),
+    ("phase3_subgraph", "first NPC interaction"),
     ("phase4_interrupt", "player choice interrupts graph"),
     ("phase5_command", "custom action via Command"),
     ("phase6_send", "two NPCs react in parallel"),
-    # phase7 skipped — requires studio for token streaming demo
+    # phase7_stream skipped — requires studio for token streaming demo
     ("phase8_store", "NPC remembers across sessions"),
     ("phase9_time_travel", "undo last turn"),
 ]
 
 
 def main() -> int:
-    if not os.environ.get("MINIMAX_API_KEY"):
-        print("ERROR: MINIMAX_API_KEY not set in env.", file=sys.stderr)
-        print("  export MINIMAX_API_KEY=... or put it in .env", file=sys.stderr)
-        return 1
     if os.environ.get("MOCK_LLM") == "1":
         print("ERROR: unset MOCK_LLM first.", file=sys.stderr)
         return 1
+
+    # resolve_model auto-loads .env, so don't pre-check here — let the
+    # first phase fail with a friendly RuntimeError if missing.
 
     # Use a clean tmp dir for persistence so we don't pollute real data.
     tmp = PROJECT_ROOT / "tmp" / "smoke"
