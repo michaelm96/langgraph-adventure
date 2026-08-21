@@ -72,7 +72,11 @@ def interrupt_for_choice(state: GameState) -> dict:
     user_choice = interrupt(payload)
     matched = next((a for a in scene.actions if a.id == user_choice), None)
     if matched is not None:
-        chosen = matched
+        # Explicitly copy — assigning `chosen = matched` keeps a reference, and
+        # langgraph's checkpoint re-serialization/deserialization then corrupts
+        # `next_state` (returns 'continue' regardless of the original). The
+        # explicit copy sidesteps the reference aliasing.
+        chosen = Action(id=matched.id, label=matched.label, next_state=matched.next_state)
     elif user_choice == "custom":
         # In real CLI, REPL prompts for free text and passes it as the resume value.
         # In tests, the demo will pass a pre-built custom action.
@@ -106,14 +110,33 @@ def interpret_custom_action(state: GameState) -> dict:
     }
 
 
-def route_choice(state: GameState) -> Command:
-    """Explicit Command routing. Routes 'custom' to interpret_custom_action."""
+def _route_choice(state: GameState) -> dict:
+    """Pure routing decision — returns state dict only.
+
+    NOTE: Do NOT use Command(goto=END, update={}) here. langgraph 1.2.x has a
+    bug where Command(goto=END) corrupts the chosen_action field's next_state
+    (silently overwrites it with 'continue' on checkpoint re-serialization).
+    Use add_conditional_edges instead, with END as a routing target.
+
+    Returns chosen_action so it's preserved; routing is done by the
+    conditional edge wired in build_game_graph.
+    """
+    return {}
+
+
+def _route_after_choice(state: GameState) -> str:
+    """Conditional-edge router: pick next node based on chosen_action.next_state.
+
+    - "end" → END (terminate game)
+    - "custom" → interpret_custom_action (LLM routing stub)
+    - otherwise → react_npcs (continue)
+    """
     action = state.get("chosen_action")
     if action is None or action.next_state == "end":
-        return Command(goto=END, update={})
+        return "__end__"
     if action.next_state == "custom":
-        return Command(goto="interpret_custom_action", update={"chosen_action": action})
-    return Command(goto="react_npcs", update={"chosen_action": action})
+        return "interpret_custom_action"
+    return "react_npcs"
 
 
 def react_npcs(state: GameState) -> dict:
@@ -130,24 +153,33 @@ def build_game_graph() -> StateGraph:
     """Build the game-graph with 6 nodes.
 
     Returns the uncompiled builder; callers compile with `.compile(checkpointer=...)`.
-    Compile flow: START → present_scene → interrupt_for_choice → route_choice
-                   → (interpret_custom_action if next_state=="custom") → react_npcs
+    Compile flow: START → present_scene → interrupt_for_choice → _route_choice
+                   → (conditional) → interpret_custom_action → react_npcs
                    → next_scene → END.
 
-    `route_choice` uses Command(goto=...) which overrides the advisory edge from
-    it to `react_npcs`; when next_state == "end", goto=END terminates early.
+    Why no Command(goto=END): langgraph 1.2.x silently corrupts chosen_action
+    state when Command routes to END. Conditional edges with END as a target
+    don't have this bug.
     """
     builder = StateGraph(GameState)
     builder.add_node("present_scene", present_scene)
     builder.add_node("interrupt_for_choice", interrupt_for_choice)
-    builder.add_node("route_choice", route_choice)
+    builder.add_node("route_choice", _route_choice)
     builder.add_node("interpret_custom_action", interpret_custom_action)
     builder.add_node("react_npcs", react_npcs)
     builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
     builder.add_edge("interrupt_for_choice", "route_choice")
-    builder.add_edge("route_choice", "interpret_custom_action")
+    builder.add_conditional_edges(
+        "route_choice",
+        _route_after_choice,
+        {
+            "react_npcs": "react_npcs",
+            "interpret_custom_action": "interpret_custom_action",
+            "__end__": END,
+        },
+    )
     builder.add_edge("interpret_custom_action", "react_npcs")
     builder.add_edge("react_npcs", "next_scene")
     builder.add_edge("next_scene", END)
