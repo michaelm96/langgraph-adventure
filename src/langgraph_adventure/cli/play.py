@@ -115,6 +115,30 @@ def play_session(theme: str) -> None:
             for a in actions:
                 print(f"  [{a['id']}] {a['label']}")
             choice = input("> ").strip()
+            if choice.strip() == "/undo":
+                # Find the parent checkpoint
+                cur = game.get_state(config)
+                if cur.parent_config:
+                    prev = game.get_state(cur.parent_config)
+                    game.update_state(config, values=prev.values)
+                    prev_scene = prev.values.get("current_scene")
+                    if prev_scene is not None:
+                        print(f"\n[undo] back at scene: {prev_scene.scene_id} — {prev_scene.description}")
+                    else:
+                        print("\n[undo] no previous scene")
+                else:
+                    print("\n[undo] no prior checkpoint (already at start)")
+                continue
+            elif choice.strip().startswith("/fork"):
+                # /fork <new-thread-id>
+                parts = choice.strip().split()
+                new_tid = parts[1] if len(parts) > 1 else f"fork-{uuid.uuid4().hex[:8]}"
+                cur_state = game.get_state(config)
+                new_config = {"configurable": {"thread_id": new_tid}}
+                game.update_state(new_config, values=cur_state.values)
+                print(f"\n[fork] current state copied to thread '{new_tid}'")
+                print("       switch with: lg-adv chat --thread-id <id>")
+                continue
             state = Command(resume=choice)
             continue
 
