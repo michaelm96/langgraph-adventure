@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Secrets
+.env
+*.env.local
+
+# Studio internals
+.langgraph_api/
+
+# Local DBs (don't commit dev state)
+*.db
+*.db-journal
+
+# SDD workspace (per-plan artifacts)
+.superpowers/sdd/
