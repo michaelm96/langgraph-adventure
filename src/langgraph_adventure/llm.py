@@ -46,9 +46,17 @@ def resolve_model(model_str: str) -> BaseChatModel:
 
     if provider == "minimax":
         from langchain_anthropic import ChatAnthropic
+        api_key = os.environ.get("MINIMAX_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "MINIMAX_API_KEY not set. Either export it in your shell "
+                "(`export MINIMAX_API_KEY=...`) or create a `.env` file in "
+                "the project root with `MINIMAX_API_KEY=...`. "
+                "See README → Status for context."
+            )
         return ChatAnthropic(
             model=name,
-            api_key=os.environ["MINIMAX_API_KEY"],
+            api_key=api_key,
             base_url="https://api.minimax.io/anthropic",
         )
 
