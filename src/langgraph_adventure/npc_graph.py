@@ -4,6 +4,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.runtime import Runtime
 
 
 class NPCState(TypedDict):
@@ -19,26 +20,44 @@ class NPCState(TypedDict):
     dialogue: str
 
 
-def _perceive_situation(state: NPCState) -> dict:
+def _perceive_situation(state: NPCState, runtime: Runtime) -> dict:
     """Just passes through - the situation was set by the caller."""
     return {}
 
 
-def _decide_action(state: NPCState) -> dict:
-    """MOCK canned dialogue. Real LLM call comes in phase 9.
+def _decide_action(state: NPCState, runtime: Runtime) -> dict:
+    """MOCK canned dialogue. Reads player_name from store for greeting.
 
-    Returns a fixed line keyed by persona so different NPCs produce different output.
+    If runtime.store is None (no store passed in config), falls back to the
+    MOCK canned dialogue without greeting.
     """
     persona_lines = {
         "Old Hermit": "I've been waiting for someone to come this way. The forest has grown quiet lately.",
         "Witch of the Mist": "Ah, a traveler. The fog here is thicker than it looks.",
         "Cave Troll": "Grrr...",
     }
-    return {"dialogue": persona_lines.get(state["persona"], "...")}
+    base_line = persona_lines.get(state["persona"], "...")
+
+    # Read player_name from store if available
+    store = getattr(runtime, "store", None)
+    player_name = None
+    if store is not None:
+        result = store.get(("npc_memories", state["persona"]), "player_name")
+        if result is not None:
+            player_name = result.value
+
+    if player_name:
+        # Replace the first sentence with a greeting
+        base_line = f"Ah, {player_name}, we meet again. {base_line}"
+
+    return {"dialogue": base_line}
 
 
-def _speak(state: NPCState) -> dict:
-    """Format the dialogue for output."""
+def _speak(state: NPCState, runtime: Runtime) -> dict:
+    """Write last_interaction to store after dialogue is produced."""
+    store = getattr(runtime, "store", None)
+    if store is not None:
+        store.put(("npc_memories", state["persona"]), "last_interaction", state["dialogue"])
     return {}
 
 
