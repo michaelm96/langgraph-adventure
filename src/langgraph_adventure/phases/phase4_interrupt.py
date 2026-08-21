@@ -34,7 +34,8 @@ def demo() -> None:
     print(f"  interrupt payload: scene_id={payload['scene_id']}, {len(payload['actions'])} actions")
     print(f"  actions: {payload['actions']}")
     assert payload["scene_id"] == "test_int"
-    assert len(payload["actions"]) == 2
+    # Phase 5.2 added a "custom" option to the menu, so 3 actions now (was 2 in Phase 4)
+    assert len(payload["actions"]) == 3, f"expected 3 actions (A, B, custom), got {len(payload['actions'])}"
 
     # Resume with chosen action id 'A'
     print("\n[step 2] resume with Command(resume='A')")
