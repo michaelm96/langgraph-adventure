@@ -1,3 +1,4 @@
+<div id="narration-container">
 {% if scene %}
 <div class="narration" id="narration">{{ scene.description }}</div>
 <form hx-post="/play/{{ thread_id }}/action" hx-target="#narration-container" hx-swap="outerHTML" class="actions">
@@ -11,4 +12,5 @@
 <div class="controls">
   <button hx-post="/play/{{ thread_id }}/undo" hx-target="#narration-container" hx-swap="outerHTML">Undo (u)</button>
   <button hx-post="/play/{{ thread_id }}/fork" hx-target="_top">Fork (f)</button>
+</div>
 </div>
