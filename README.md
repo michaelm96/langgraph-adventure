@@ -7,10 +7,12 @@ fits the whole.
 
 ## What's this
 
-A 9-phase tutorial project. By the end you have a working text adventure where a
-meta graph orchestrates a game graph and per-NPC subgraphs, with streaming,
-memory, interrupts, and time travel. Every phase is a self-contained lesson:
-the demo file shows only that phase's concept, and the production code in
+A 10-phase tutorial project. Phases 1–9 each ship a runnable demo + cumulative
+production code, so by the end you have a working text adventure where a meta
+graph orchestrates a game graph and per-NPC subgraphs, with streaming, memory,
+interrupts, and time travel. Phase 10 ties it together (README + push).
+
+Every demo file shows only that phase's concept, and the production code in
 `src/langgraph_adventure/` is always equivalent to the final (phase 9) state.
 
 ## Roadmap
@@ -26,6 +28,7 @@ the demo file shows only that phase's concept, and the production code in
 | 7 | `astream_events` (token streaming) | Narration streams token-by-token | `phase7_stream` |
 | 8 | `Store` (long-term memory) | NPC remembers you across sessions | `phase8_store` |
 | 9 | `checkpointer` + `update_state` (time travel) | "Undo last turn" | `phase9_time_travel` |
+| 10 | Final integration | README refresh + push to GitHub | (no demo) |
 
 Per-phase concept docs live in `docs/phases/phase{N}_*.md`.
 
@@ -45,6 +48,8 @@ for n in 1 2 3 4 5 6 7 8 9; do
   MOCK_LLM=1 python -m langgraph_adventure.phases.phase${n}_*
 done
 ```
+
+Phase 10 has no demo — it covers the README refresh and the git push.
 
 ## Play the game (REPL)
 
@@ -110,7 +115,7 @@ langgraph-adventure/
 
 ## Status
 
-✅ All 9 phases complete. The meta-graph, game-graph, and NPC subgraphs all
+✅ All 10 phases complete. The meta-graph, game-graph, and NPC subgraphs all
 build and run under MOCK_LLM=1. Studio loads both graphs. The CLI REPL is
 operational (with `--theme`, `/undo`, `/fork`, custom action input).
 
