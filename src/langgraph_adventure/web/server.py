@@ -119,6 +119,7 @@ def play_action(thread_id: str, action: str = Form(""), request: Request = None)
     """Resume the graph's interrupt with the chosen action. Returns HTMX partial."""
     config = {"configurable": {"thread_id": thread_id}}
     state = graph.get_state(config)
+    print(f"[play_action] thread={thread_id[:8]} action={action!r} before: next={state.next}", flush=True)
 
     if not state.values:
         return templates.TemplateResponse(
@@ -126,8 +127,18 @@ def play_action(thread_id: str, action: str = Form(""), request: Request = None)
             {"request": request, "thread_id": thread_id, "scene": None, "actions": []},
         )
 
-    graph.invoke(Command(resume=action), config=config)
+    if state.next:
+        # Pending interrupt — resume with the action.
+        graph.invoke(Command(resume=action), config=config)
+    else:
+        # Graph already ENDed (after the first turn's next_scene). Re-invoke to
+        # re-pause at interrupt_for_choice so the action actually takes effect.
+        theme = state.values.get("theme", "noir-detective")
+        graph.invoke({"messages": [HumanMessage(content=theme)], "current_scene": state.values.get("current_scene")}, config=config)
+        graph.invoke(Command(resume=action), config=config)
+
     state = graph.get_state(config)
+    print(f"[play_action] thread={thread_id[:8]} after: next={state.next}", flush=True)
     scene = state.values.get("current_scene")
     actions = scene.actions if scene and scene.actions else []
 

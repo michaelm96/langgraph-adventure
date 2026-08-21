@@ -21,6 +21,8 @@ from langgraph.runtime import Runtime
 from langgraph_adventure.npc_graph import build_npc_graph
 from langgraph_adventure.state import Action, Scene
 from langgraph_adventure.meta_graph import _SCENES
+from langgraph_adventure.llm import resolve_model
+from langchain_core.messages import HumanMessage
 
 
 class GameState(MessagesState):
@@ -225,16 +227,53 @@ def persist(state: GameState, runtime: Runtime) -> dict:
 
 
 def next_scene(state: GameState) -> dict:
-    """Pick the next scene based on the chosen action's routing key.
+    """Generate the next scene based on player action and history.
 
-    Phase 7 would stream NPC dialogue here; for now, instant lookup via the
-    meta-graph's hardcoded scene factories so the story actually progresses.
+    In real LLM mode: calls MiniMax with structured output to generate a fresh
+    Scene (description + npcs + 2 actions) that advances the story. This is
+    Phase 7 — real scene generation, not a hardcoded lookup.
+
+    In MOCK mode (MOCK_LLM=1): falls back to the hardcoded _SCENES routing so
+    the phase demos keep working without API costs.
     """
     action = state.get("chosen_action")
     if action is None:
         return {}
-    factory = _SCENES.get(action.next_state, _SCENES["continue"])
-    return {"current_scene": factory()}
+
+    model = resolve_model("minimax/MiniMax-M3")
+    # ponytail: MOCK can't do structured output, fall back to hardcoded lookup
+    if model.__class__.__name__ == "_MockChatModel":
+        factory = _SCENES.get(action.next_state, _SCENES["continue"])
+        return {"current_scene": factory()}
+
+    current = state.get("current_scene")
+    theme = state.get("theme", "noir detective")
+    history = state.get("messages", [])
+    history_snippet = "\n".join(
+        f"- {m.content[:80]}" for m in history[-4:] if hasattr(m, "content")
+    ) or "(just started)"
+
+    prompt = f"""You are the game master of a text adventure.
+
+THEME: {theme}
+
+WHERE WE ARE: {current.description if current else "Just started."}
+
+WHAT THE PLAYER JUST DID: {action.label}
+
+WHAT HAPPENED RECENTLY:
+{history_snippet}
+
+Generate the NEXT scene. It MUST be different from where we are — new place, new situation, new NPCs are encouraged. Keep the description to 1-3 sentences. Provide exactly 2 actions: A and B. Each action's next_state field can be anything (it will be overridden by your next move); just give plausible labels.
+
+Do not loop back to the current scene. Always advance the story.
+"""
+    structured = model.with_structured_output(Scene)
+    new_scene = structured.invoke([HumanMessage(content=prompt)])
+    # overwrite next_state to ensure no infinite loop (forest→forest etc.)
+    for a in new_scene.actions:
+        a.next_state = a.id  # routing key is just the action id now
+    return {"current_scene": new_scene}
 
 
 def build_game_graph() -> StateGraph:
