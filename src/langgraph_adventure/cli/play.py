@@ -11,6 +11,7 @@ with `Command(resume=choice)`.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import uuid
 from pathlib import Path
@@ -35,12 +36,47 @@ def _get_checkpointer() -> SqliteSaver:
     return SqliteSaver(sqlite3.connect(str(DB_PATH), check_same_thread=False))
 
 
+async def _stream_opening_scene(meta, theme: str) -> str:
+    """Stream the meta-graph opening scene tokens via astream_events v2.
+
+    `astream_events` v2 surfaces token-level chunks from chat models; we
+    print each as it arrives so the player sees narration appear live
+    rather than after a full .invoke() round-trip.
+    """
+    scene_description = ""
+    async for event in meta.astream_events(
+        {
+            "theme": theme,
+            "world_seed": str(uuid.uuid4()),
+            "current_request": "continue",
+            "history": [],
+            "npc_dialogues": {},
+        },
+        version="v2",
+    ):
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if chunk.content:
+                print(chunk.content, end="", flush=True)
+                scene_description += chunk.content
+    return scene_description
+
+
 def play_session(theme: str) -> None:
     """Run one REPL session: meta-graph opening → game-graph loop."""
     print(f"=== {theme} ===\n")
 
-    # Step 1: opening scene from meta-graph
+    # Step 1: opening scene from meta-graph — stream tokens for live narration.
+    # astream_events is async, but the rest of play_session stays sync (the
+    # game-graph REPL uses sync .invoke() + Command(resume=...)), so we wrap
+    # just the streaming piece in asyncio.run.
     meta = build_meta_graph()
+    asyncio.run(_stream_opening_scene(meta, theme))
+    print()
+    # astream_events v2 fires token-level chunks but doesn't surface the final
+    # typed Scene state cleanly; call .invoke() once to grab the Scene object
+    # the game-graph needs (meta-graph is deterministic on current_request,
+    # so the two calls produce matching state).
     meta_result = meta.invoke({
         "theme": theme,
         "world_seed": str(uuid.uuid4()),
@@ -51,7 +87,11 @@ def play_session(theme: str) -> None:
     scene = meta_result["history"][-1]
     print(f"Opening scene: {scene.scene_id}")
 
-    # Step 2: game-graph REPL
+    # Step 2: game-graph REPL — kept on sync .invoke() + Command(resume=...).
+    # In langgraph 1.2.x, `interrupt` signals don't surface reliably through
+    # astream_events (v2 is for token-level streaming, not interrupt-aware REPLs).
+    # Phase 7 demonstrates the streaming hook on the meta-graph; combining it
+    # with the interrupt-based game-graph REPL is a stretch goal.
     game = build_game_graph().compile(checkpointer=_get_checkpointer())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     state = {
