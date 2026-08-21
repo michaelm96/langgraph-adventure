@@ -1,0 +1,14 @@
+{% if scene %}
+<div class="narration" id="narration">{{ scene.description }}</div>
+<form hx-post="/play/{{ thread_id }}/action" hx-target="#narration-container" hx-swap="outerHTML" class="actions">
+  {% for action in actions %}
+  <button type="submit" name="action" value="{{ action.id }}" data-action-index="{{ loop.index }}">[{{ action.label }}] {{ action.text }}</button>
+  {% endfor %}
+</form>
+{% else %}
+<div class="narration">You are in darkness.</div>
+{% endif %}
+<div class="controls">
+  <button hx-post="/play/{{ thread_id }}/undo" hx-target="#narration-container" hx-swap="outerHTML">Undo (u)</button>
+  <button hx-post="/play/{{ thread_id }}/fork" hx-target="_top">Fork (f)</button>
+</div>

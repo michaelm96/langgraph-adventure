@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>langgraph-adventure</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>langgraph-adventure</h1>
+    <div class="thread">thread: <span id="thread-id">{{ thread_id }}</span></div>
+  </header>
+  <div id="narration-container">
+    {% include "_narration.html.j2" %}
+  </div>
+  <div class="history">
+    <details>
+      <summary>Keyboard shortcuts</summary>
+      <p><span class="kbd">1</span>/<span class="kbd">2</span>/<span class="kbd">3</span> — choose action A/B/C</p>
+      <p><span class="kbd">u</span> — undo last turn</p>
+      <p><span class="kbd">f</span> — fork from here</p>
+    </details>
+  </div>
+</main>
+<script>
+  // Keyboard shortcuts: 1/2/3 = choose, u = undo, f = fork
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    const threadId = document.getElementById('thread-id').textContent;
+    if (['1','2','3'].includes(e.key)) {
+      const btn = document.querySelector(`[data-action-index="${e.key}"]`);
+      if (btn) btn.click();
+    } else if (e.key === 'u') {
+      htmx.ajax('POST', `/play/${threadId}/undo`);
+    } else if (e.key === 'f') {
+      htmx.ajax('POST', `/play/${threadId}/fork`);
+    }
+  });
+</script>
+</body>
+</html>

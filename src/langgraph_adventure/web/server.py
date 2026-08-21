@@ -5,15 +5,24 @@ session = one thread_id (UUID4 in URL). See spec §3.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+WEB_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = WEB_DIR / "templates"
+STATIC_DIR = WEB_DIR / "static"
 
 app = FastAPI(title="langgraph-adventure")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Placeholder. Real redirect added in Task 2."""
     return {"status": "ok"}
 
 
