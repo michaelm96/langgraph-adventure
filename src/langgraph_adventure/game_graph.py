@@ -14,6 +14,7 @@ from typing import Annotated, Any
 from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import MessagesState, add_messages
 from langgraph.graph.state import CompiledStateGraph
+from langchain_core.messages import AIMessage
 from langgraph.types import interrupt, Command, Send
 
 from langgraph_adventure.npc_graph import build_npc_graph
@@ -171,6 +172,22 @@ def _npc_react_node(state: GameState) -> dict:
     return {"npc_dialogues": {npc_name: result["dialogue"]}}
 
 
+def merge_reactions(state: GameState) -> dict:
+    """Format npc_dialogues into MessagesState messages (AIMessage per NPC).
+
+    Runs once after all parallel _npc_react invocations complete.
+    Returns dict with messages list (consumed by MessagesState's add_messages reducer).
+    """
+    npc_dialogues = state.get("npc_dialogues", {})
+    if not npc_dialogues:
+        return {}
+    messages = [
+        AIMessage(content=f'{persona}: "{dialogue}"')
+        for persona, dialogue in npc_dialogues.items()
+    ]
+    return {"messages": messages}
+
+
 def next_scene(state: GameState) -> dict:
     """Generate the next scene (Phase 7 streams narration; Phase 5 just stub)."""
     return {}
@@ -201,6 +218,7 @@ def build_game_graph() -> StateGraph:
     builder.add_node("route_choice", _route_choice)
     builder.add_node("interpret_custom_action", interpret_custom_action)
     builder.add_node("_npc_react", _npc_react_node)
+    builder.add_node("merge_reactions", merge_reactions)
     builder.add_node("next_scene", next_scene)
     builder.add_edge(START, "present_scene")
     builder.add_edge("present_scene", "interrupt_for_choice")
@@ -215,7 +233,8 @@ def build_game_graph() -> StateGraph:
         },
     )
     builder.add_edge("interpret_custom_action", "next_scene")
-    builder.add_edge("_npc_react", "next_scene")
+    builder.add_edge("_npc_react", "merge_reactions")
+    builder.add_edge("merge_reactions", "next_scene")
     builder.add_edge("next_scene", END)
     return builder
 
