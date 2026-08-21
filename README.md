@@ -15,17 +15,19 @@ the demo file shows only that phase's concept, and the production code in
 
 ## Roadmap
 
-1. **StateGraph + add_messages** — the smallest useful graph: a chat turn loop.
-2. **conditional_edges** — branch on player intent to take an action or quit.
-3. **subgraph-as-node** — NPC reactions live in their own graphs, invoked as nodes.
-4. **interrupt()** — pause for human input before a consequential choice.
-5. **Command (explicit routing)** — nodes return the next node, not just state.
-6. **Send (map-reduce parallel)** — fan out to all NPCs, then fold their reactions.
-7. **astream_events (token streaming)** — stream tokens to the player as they generate.
-8. **Store (long-term memory)** — remember NPCs across sessions.
-9. **checkpointer + update_state (time travel)** — rewind and replay any turn.
+| Phase | Concept | Game slice | Demo |
+|-------|---------|-----------|------|
+| 1 | `StateGraph` + `add_messages` | "You see a door. Open it?" basic turn loop | `phase1_stategraph` |
+| 2 | `add_conditional_edges` | "Go left into the forest, or right into the cave?" | `phase2_conditional` |
+| 3 | subgraph-as-node | First NPC ("Old Hermit") appears | `phase3_subgraph` |
+| 4 | `interrupt()` | Game pauses, awaits choice | `phase4_interrupt` |
+| 5 | `Command` (explicit routing) | "Type a custom action" — LLM routes it | `phase5_command` |
+| 6 | `Send` (map-reduce parallel) | Two NPCs react in parallel | `phase6_send` |
+| 7 | `astream_events` (token streaming) | Narration streams token-by-token | `phase7_stream` |
+| 8 | `Store` (long-term memory) | NPC remembers you across sessions | `phase8_store` |
+| 9 | `checkpointer` + `update_state` (time travel) | "Undo last turn" | `phase9_time_travel` |
 
-Per-phase concept docs land in `docs/phases/README.md` (written in Task 1.3).
+Per-phase concept docs live in `docs/phases/phase{N}_*.md`.
 
 ## Run a demo
 
@@ -36,6 +38,37 @@ MOCK_LLM=1 python -m langgraph_adventure.phases.phase{N}
 Replace `N` with the phase number. `MOCK_LLM=1` skips real LLM calls so you can
 run any demo without an API key.
 
+Or run them all in sequence:
+
+```bash
+for n in 1 2 3 4 5 6 7 8 9; do
+  MOCK_LLM=1 python -m langgraph_adventure.phases.phase${n}_*
+done
+```
+
+## Play the game (REPL)
+
+The cumulative game graph (built across phases 1–9) runs as an interactive
+REPL. Start it with:
+
+```bash
+lg-adv play "noir detective"
+```
+
+Or with the variable theme (phase 9):
+
+```bash
+lg-adv play "high fantasy quest"
+```
+
+Inside the REPL:
+
+- Pick a letter to choose an action.
+- Type your own action (the LLM interprets it).
+- `/undo` — rewind to the previous turn.
+- `/fork <thread-id>` — copy state to a new thread for alternate exploration.
+- `/exit` — quit.
+
 ## Studio
 
 After installing the dev extras (`pip install -e ".[dev]"`), start the LangGraph
@@ -45,10 +78,46 @@ Studio dev server:
 python -m langgraph_cli dev
 ```
 
-The UI loads `langgraph.json`, which exposes the `meta` and `game` graphs. The
-NPC graph is added in phase 3.
+The UI loads `langgraph.json`, which exposes the `meta` and `game` graphs. Use
+Studio to visualize node structure and run individual nodes interactively.
+
+## Project layout
+
+```
+langgraph-adventure/
+├── pyproject.toml          # Package config + [dev] extras for Studio
+├── README.md
+├── docs/
+│   ├── superpowers/
+│   │   ├── specs/2026-08-21-langgraph-tutorial-design.md
+│   │   └── plans/2026-08-21-langgraph-tutorial.md
+│   └── phases/
+│       ├── README.md       # 5-section template overview
+│       └── phase{1..9}_*.md
+├── src/langgraph_adventure/
+│   ├── cli/play.py         # REPL + astream_events for opening narration
+│   ├── state.py            # Pydantic Scene/Action/NPCReaction models
+│   ├── meta_graph.py       # 2-node graph (theme_intake → scene_generator)
+│   ├── npc_graph.py        # Per-NPC subgraph (uses runtime.store)
+│   ├── game_graph.py       # Full game loop: present_scene → interrupt → react → merge → persist → next
+│   ├── llm.py              # MiniMax provider + MOCK mode
+│   ├── store.py            # InMemoryStore wrappers (npc_recall / npc_remember)
+│   ├── persistence.py      # get_checkpointer(memory=...) helper
+│   └── phases/
+│       └── phase{1..9}_*.py  # Self-contained per-phase demos
+└── langgraph.json          # Studio entrypoint (meta + game graphs)
+```
 
 ## Status
 
-Tutorial in progress — phases 1-9 land in order. See `.superpowers/sdd/` for
-the full plan and the per-task briefs.
+✅ All 9 phases complete. The meta-graph, game-graph, and NPC subgraphs all
+build and run under MOCK_LLM=1. Studio loads both graphs. The CLI REPL is
+operational (with `--theme`, `/undo`, `/fork`, custom action input).
+
+Real-mode operation (without `MOCK_LLM=1`) requires a valid `MINIMAX_API_KEY`
+in `.env`. Phases 7+ work end-to-end with real MiniMax narration once that's
+configured.
+
+## License
+
+MIT.
